@@ -4,3 +4,18 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+
+# data 
+data/raw/csv/*.csv
+data/raw/parquet/*.parquet
+data/raw/parquet/*.json
+*.parquet
+
+
+# mlflow local store
+mlruns/
+mlflow.db
+
+# trained model artifacts (reproducible via src/training/train.py, tracked in MLflow instead)
+models/
