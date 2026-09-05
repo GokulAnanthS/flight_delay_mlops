@@ -12,11 +12,12 @@ Run locally with:
 
 import argparse
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import pandas as pd
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from mlflow.exceptions import MlflowException
 from pydantic import BaseModel, Field, field_validator
 
@@ -128,7 +129,21 @@ def health():
     }
 
 
-@app.post("/admin/reload")
+def _verify_admin_token(x_admin_token: str | None = Header(default=None)) -> None:
+    """Require a shared-secret `X-Admin-Token` header matching config.ADMIN_RELOAD_TOKEN.
+
+    Fails closed: if the server has no token configured (unset env var),
+    the endpoint refuses every request rather than silently accepting all
+    of them. `secrets.compare_digest` avoids leaking the token's value
+    through response-time differences on a byte-by-byte string comparison.
+    """
+    if not config.ADMIN_RELOAD_TOKEN:
+        raise HTTPException(status_code=503, detail="ADMIN_RELOAD_TOKEN is not configured on the server")
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, config.ADMIN_RELOAD_TOKEN):
+        raise HTTPException(status_code=403, detail="Missing or invalid X-Admin-Token header")
+
+
+@app.post("/admin/reload", dependencies=[Depends(_verify_admin_token)])
 def reload_endpoint():
     """Re-run the exact same load the startup `lifespan` handler does.
 
