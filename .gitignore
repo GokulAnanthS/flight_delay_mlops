@@ -5,13 +5,12 @@ __pycache__/
 venv/
 *.egg-info/
 
-
 # data 
 data/raw/csv/*.csv
 data/raw/parquet/*.parquet
 data/raw/parquet/*.json
+data/incoming/*.csv
 *.parquet
-
 
 # mlflow local store
 mlruns/

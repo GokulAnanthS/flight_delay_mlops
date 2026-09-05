@@ -13,6 +13,11 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 LOOKUP_DIR = PROCESSED_DIR / "lookup_tables"
 MODELS_DIR = PROJECT_ROOT / "models"
 
+# Staging area for CT (continuous training): user-downloaded post-2021 BTS
+# monthly CSVs land here untouched, then src/ct/arrivals.py releases them
+# into RAW_CSV_DIR one at a time to simulate new data arriving over time.
+INCOMING_DIR = PROJECT_ROOT / "data" / "incoming"
+
 TRAIN_PATH = PROCESSED_DIR / "train.parquet"
 VAL_PATH = PROCESSED_DIR / "val.parquet"
 TEST_PATH = PROCESSED_DIR / "test.parquet"

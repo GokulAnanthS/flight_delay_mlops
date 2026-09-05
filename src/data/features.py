@@ -170,7 +170,12 @@ def save_lookup_tables(
     logger.info("Saved %d lookup tables to %s", len(tables), out_dir)
 
 
-def run_pipeline(raw_dir: Path = config.RAW_PARQUET_DIR, out_dir: Path = config.PROCESSED_DIR) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def run_pipeline(
+    raw_dir: Path = config.RAW_PARQUET_DIR,
+    out_dir: Path = config.PROCESSED_DIR,
+    train_end: str = config.TRAIN_END,
+    val_end: str = config.VAL_END,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     logger.info("Loading raw data from %s", raw_dir)
     df = load_raw(raw_dir)
     logger.info("%s rows loaded", f"{len(df):,}")
@@ -182,12 +187,14 @@ def run_pipeline(raw_dir: Path = config.RAW_PARQUET_DIR, out_dir: Path = config.
     df = merge_historical_features(df, tables)
 
     # Computed from the training period only: a production system can't use
-    # test-period outcomes to fill in training-row features.
-    overall_fallback = df.loc[df["FL_DATE"] < config.TRAIN_END, config.TARGET_COL].mean()
+    # test-period outcomes to fill in training-row features. Uses the
+    # caller's train_end (not config.TRAIN_END) so a CT cycle with walked-
+    # forward cutoffs computes the fallback from ITS training window.
+    overall_fallback = df.loc[df["FL_DATE"] < train_end, config.TARGET_COL].mean()
     df = fill_historical_fallbacks(df, overall_fallback)
 
     model_df = select_model_frame(df)
-    train, val, test = split_train_val_test(model_df)
+    train, val, test = split_train_val_test(model_df, train_end, val_end)
     logger.info(
         "Train: %s (%s -> %s)", f"{len(train):,}", train["FL_DATE"].min(), train["FL_DATE"].max()
     )
@@ -203,8 +210,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw-dir", type=Path, default=config.RAW_PARQUET_DIR)
     parser.add_argument("--out-dir", type=Path, default=config.PROCESSED_DIR)
+    parser.add_argument("--train-end", default=config.TRAIN_END)
+    parser.add_argument("--val-end", default=config.VAL_END)
     args = parser.parse_args()
-    run_pipeline(args.raw_dir, args.out_dir)
+    run_pipeline(args.raw_dir, args.out_dir, args.train_end, args.val_end)
 
 
 if __name__ == "__main__":
