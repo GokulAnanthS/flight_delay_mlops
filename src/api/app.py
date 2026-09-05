@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException
 from mlflow.exceptions import MlflowException
 from pydantic import BaseModel, Field, field_validator
 
+from src import config, registry
 from src.inference import predict as predict_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -72,6 +73,7 @@ class ModelArtifacts:
         self.latest = None
         self.overall_fallback = None
         self.categorical_dtypes = None
+        self.version = None
 
     @property
     def loaded(self) -> bool:
@@ -82,6 +84,19 @@ class ModelArtifacts:
         tables, self.overall_fallback = predict_module.load_lookup_tables()
         self.latest = predict_module.latest_rates(tables)
         self.categorical_dtypes = predict_module.load_categorical_dtypes()
+        self.version = _current_production_version()
+
+
+def _current_production_version() -> str | None:
+    """Which registered version the 'production' alias currently points to.
+
+    Reads it from the registered model's alias dict (not from a
+    ModelVersion object returned by search) -- MLflow doesn't populate
+    `.aliases` on search results, same gotcha src/registry.py works around.
+    """
+    client = registry.get_client()
+    registered_model = client.get_registered_model(config.MLFLOW_MODEL_NAME)
+    return registered_model.aliases.get(config.MLFLOW_PRODUCTION_ALIAS)
 
 
 artifacts = ModelArtifacts()
@@ -106,7 +121,31 @@ app = FastAPI(title="Flight Delay Prediction API", lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    return {"status": "ok" if artifacts.loaded else "unavailable", "model_loaded": artifacts.loaded}
+    return {
+        "status": "ok" if artifacts.loaded else "unavailable",
+        "model_loaded": artifacts.loaded,
+        "production_version": artifacts.version,
+    }
+
+
+@app.post("/admin/reload")
+def reload_endpoint():
+    """Re-run the exact same load the startup `lifespan` handler does.
+
+    This is Phase 10 (CD)'s entire mechanism: the API only ever reads the
+    'production' alias at process startup, so a promotion (src/registry.py)
+    is invisible to an already-running process until something makes it
+    reload. Calling this after a promotion is that "something" -- no image
+    rebuild or restart needed, just re-reading the registry.
+    """
+    try:
+        artifacts.load()
+    except (FileNotFoundError, MlflowException) as exc:
+        logger.error("Failed to reload model artifacts: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Reload failed: {exc}") from exc
+
+    logger.info("Model artifacts reloaded (now serving production v%s)", artifacts.version)
+    return {"status": "reloaded", "model_loaded": artifacts.loaded, "production_version": artifacts.version}
 
 
 @app.post("/predict", response_model=PredictResponse)
