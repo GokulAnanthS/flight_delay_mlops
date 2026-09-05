@@ -47,7 +47,28 @@ def list_pending_arrivals(incoming_dir: Path = config.INCOMING_DIR) -> list[Path
 
 def count_released(incoming_dir: Path = config.INCOMING_DIR) -> int:
     return len(_load_manifest(incoming_dir))
+def release_all_pending(
+    incoming_dir: Path = config.INCOMING_DIR, raw_csv_dir: Path = config.RAW_CSV_DIR
+) -> list[Path]:
+    """Copy every not-yet-released CSV into `raw_csv_dir` and record them all as released.
 
+    Same idempotency rules as `release_next`: a file already in the manifest
+    is skipped even if it's still sitting in `incoming_dir`. Returns the list
+    of files released by this call (empty if nothing was pending).
+    """
+    pending = list_pending_arrivals(incoming_dir)
+    if not pending:
+        return []
+
+    Path(raw_csv_dir).mkdir(parents=True, exist_ok=True)
+    released = _load_manifest(incoming_dir)
+    for file in pending:
+        shutil.copy2(file, Path(raw_csv_dir) / file.name)
+        released.append(file.name)
+
+    _save_manifest(incoming_dir, released)
+    logger.info("Released %d file(s) into %s (%d released so far)", len(pending), raw_csv_dir, len(released))
+    return pending
 
 def release_next(
     incoming_dir: Path = config.INCOMING_DIR, raw_csv_dir: Path = config.RAW_CSV_DIR

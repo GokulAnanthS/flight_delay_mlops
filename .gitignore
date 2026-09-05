@@ -10,6 +10,7 @@ data/raw/csv/*.csv
 data/raw/parquet/*.parquet
 data/raw/parquet/*.json
 data/incoming/*.csv
+data/incoming/*.json
 *.parquet
 
 # mlflow local store
