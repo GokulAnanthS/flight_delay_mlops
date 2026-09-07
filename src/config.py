@@ -1,7 +1,7 @@
 """
 Central configuration for the flight-delay pipeline: paths, columns, and model settings.
 """
-
+import os
 from pathlib import Path
 
 # --- Paths -------------------------------------------------------------
@@ -99,8 +99,9 @@ RANDOM_STATE = 42
 # MLflow experiment and tracking configuration.
 # Stores run metadata in a local SQLite database shared across all entry points.
 MLFLOW_EXPERIMENT_NAME = "flight-delay-prediction"
-MLFLOW_TRACKING_URI = f"sqlite:///{PROJECT_ROOT.as_posix()}/mlflow.db"
-
+MLFLOW_TRACKING_URI = os.environ.get(
+    "MLFLOW_TRACKING_URI", f"sqlite:///{PROJECT_ROOT.as_posix()}/mlflow.db"
+)
 # --- Model registry ---------------------------------------------------------
 
 # MLflow Model Registry configuration for managing model versions and deployment aliases.
@@ -125,3 +126,17 @@ INFERENCE_REQUIRED_COLS = [
 ]
 
 PREDICTION_THRESHOLD = 0.5
+
+# --- Admin --------------------------------------------------------------
+
+# Shared-secret header required by POST /admin/reload (Phase 10, CD). Read
+# from the environment rather than hardcoded so it's never committed. Unset
+# means the endpoint fails closed (503), not open with no protection.
+ADMIN_RELOAD_TOKEN = os.environ.get("ADMIN_RELOAD_TOKEN")
+# Base URL of the deployed API. registry.py uses this to trigger a reload
+# right after promotion. Points at the ALB in front of flight-delay-api-service
+# (flight-delay-api-tg target group) rather than a task's own IP, which changes
+# on every restart/redeploy -- the ALB's DNS name stays fixed across those.
+FLIGHT_DELAY_API_URL = os.environ.get(
+    "FLIGHT_DELAY_API_URL", "http://flight-delay-alb-211682328.us-east-1.elb.amazonaws.com"
+)

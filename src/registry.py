@@ -10,6 +10,7 @@ real traffic just because a training run finished.
 
 import argparse
 import logging
+import httpx
 
 import mlflow
 from mlflow import MlflowClient
@@ -48,7 +49,26 @@ def promote_to_production(version: int, client: MlflowClient | None = None) -> N
     client = client or get_client()
     client.set_registered_model_alias(config.MLFLOW_MODEL_NAME, config.MLFLOW_PRODUCTION_ALIAS, version)
     logger.info("Promoted %s v%s to '%s'", config.MLFLOW_MODEL_NAME, version, config.MLFLOW_PRODUCTION_ALIAS)
+    trigger_reload()
 
+def trigger_reload(api_url: str = config.FLIGHT_DELAY_API_URL, token: str = config.ADMIN_RELOAD_TOKEN) -> None:
+    """Best-effort: ask the running API to reload its model after a promotion.
+
+    Failing here doesn't undo the promotion -- the registry alias is already
+    the source of truth. A failed reload just means the API keeps serving
+    whatever it already had loaded until it's reloaded or restarted some
+    other way.
+    """
+    try:
+        response = httpx.post(
+            f"{api_url}/admin/reload",
+            headers={"X-Admin-Token": token or ""},
+            timeout=10,
+        )
+        response.raise_for_status()
+        logger.info("Reloaded API at %s", api_url)
+    except httpx.HTTPError as exc:
+        logger.warning("Could not reload API at %s: %s", api_url, exc)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
