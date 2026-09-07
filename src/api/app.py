@@ -17,8 +17,9 @@ from contextlib import asynccontextmanager
 
 import pandas as pd
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from mlflow.exceptions import MlflowException
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field, field_validator
 
 from src import config, registry
@@ -26,6 +27,16 @@ from src.inference import predict as predict_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
+
+PREDICTION_REQUESTS = Counter(
+    "prediction_requests_total", "Total /predict requests", ["status"]
+)
+PREDICTION_LATENCY = Histogram(
+    "prediction_latency_seconds", "Time spent handling a /predict request"
+)
+PRODUCTION_MODEL_VERSION = Gauge(
+    "production_model_version", "MLflow registry version currently aliased 'production' (0 if none loaded)"
+)
 
 
 class FlightRequest(BaseModel):
@@ -86,6 +97,7 @@ class ModelArtifacts:
         self.latest = predict_module.latest_rates(tables)
         self.categorical_dtypes = predict_module.load_categorical_dtypes()
         self.version = _current_production_version()
+        PRODUCTION_MODEL_VERSION.set(int(self.version) if self.version is not None else 0)
 
 
 def _current_production_version() -> str | None:
@@ -163,24 +175,33 @@ def reload_endpoint():
     return {"status": "reloaded", "model_loaded": artifacts.loaded, "production_version": artifacts.version}
 
 
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/predict", response_model=PredictResponse)
 def predict_endpoint(request: PredictRequest):
-    if not artifacts.loaded:
-        raise HTTPException(status_code=503, detail="Model artifacts are not loaded")
-    if not request.flights:
-        raise HTTPException(status_code=400, detail="flights list must not be empty")
+    with PREDICTION_LATENCY.time():
+        if not artifacts.loaded:
+            PREDICTION_REQUESTS.labels(status="error").inc()
+            raise HTTPException(status_code=503, detail="Model artifacts are not loaded")
+        if not request.flights:
+            PREDICTION_REQUESTS.labels(status="error").inc()
+            raise HTTPException(status_code=400, detail="flights list must not be empty")
 
-    df_raw = pd.DataFrame([f.model_dump() for f in request.flights])
-    result = predict_module.predict(
-        df_raw, artifacts.model, artifacts.latest, artifacts.overall_fallback, artifacts.categorical_dtypes
-    )
+        df_raw = pd.DataFrame([f.model_dump() for f in request.flights])
+        result = predict_module.predict(
+            df_raw, artifacts.model, artifacts.latest, artifacts.overall_fallback, artifacts.categorical_dtypes
+        )
 
-    return PredictResponse(
-        predictions=[
-            FlightPrediction(delay_probability=float(row.delay_probability), predicted_delay=int(row.predicted_delay))
-            for row in result.itertuples()
-        ]
-    )
+        PREDICTION_REQUESTS.labels(status="success").inc()
+        return PredictResponse(
+            predictions=[
+                FlightPrediction(delay_probability=float(row.delay_probability), predicted_delay=int(row.predicted_delay))
+                for row in result.itertuples()
+            ]
+        )
 
 
 def main() -> None:
