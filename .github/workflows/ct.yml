@@ -29,7 +29,7 @@ jobs:
         # IP instead, looked up fresh each run since it changes on redeploy.
         run: |
           TASK_ARN=$(aws ecs list-tasks --cluster flight-delay-cluster --service-name mlflow-server-service --region ${{ vars.AWS_REGION }} --query "taskArns[0]" --output text)
-          ENI_ID=$(aws ecs describe-tasks --cluster flight-delay-cluster --tasks "$TASK_ARN" --region ${{ vars.AWS_REGION }} --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" --output text)
+          ENI_ID=$(aws ecs describe-tasks --cluster flight-delay-cluster --tasks "$TASK_ARN" --region ${{ vars.AWS_REGION }} --query "tasks[0].attachments[?type=='ElasticNetworkInterface']|[0].details[?name=='networkInterfaceId']|[0].value" --output text)
           PRIVATE_IP=$(aws ec2 describe-network-interfaces --network-interface-ids "$ENI_ID" --region ${{ vars.AWS_REGION }} --query "NetworkInterfaces[0].PrivateIpAddress" --output text)
           echo "MLFLOW_TRACKING_URI=http://${PRIVATE_IP}:5000" >> "$GITHUB_ENV"
 
