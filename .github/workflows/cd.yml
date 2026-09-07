@@ -28,6 +28,11 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Fetch processed data for image build
+        run: |
+          aws s3 sync s3://flight-delay-mlops-gokul2026/processed/lookup_tables/ data/processed/lookup_tables/
+          aws s3 cp s3://flight-delay-mlops-gokul2026/processed/train.parquet data/processed/train.parquet
+
       - name: Build and push image
         env:
           REGISTRY: ${{ steps.ecr-login.outputs.registry }}
