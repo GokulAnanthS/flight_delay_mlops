@@ -29,7 +29,7 @@ import logging
 from src import config
 from src.ct import arrivals
 from src.ct.walkforward import compute_cutoffs
-from src.data import features, ingest
+from src.data import features, ingest, storage
 from src.training import train
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -56,7 +56,7 @@ def run_cycle(
     train_end, val_end = compute_cutoffs(n_periods)
     logger.info(
         "Cycle %d: released %s -> train_end=%s, val_end=%s",
-        n_periods, released.name, train_end, val_end,
+        n_periods, storage.basename(released), train_end, val_end,
     )
 
     ingest.convert_csvs_to_parquet(raw_csv_dir, raw_parquet_dir)
@@ -66,7 +66,7 @@ def run_cycle(
     logger.info("Cycle %d complete. Val metrics: %s", n_periods, metrics)
     return {
         "cycle": n_periods,
-        "released_file": released.name,
+        "released_file": storage.basename(released),
         "train_end": train_end,
         "val_end": val_end,
         **metrics,
@@ -93,7 +93,7 @@ def run_bulk_cycle(
     train_end, val_end = compute_cutoffs(n_periods)
     logger.info(
         "Bulk cycle: released %d file(s) (%s) -> train_end=%s, val_end=%s",
-        len(released), [f.name for f in released], train_end, val_end,
+        len(released), [storage.basename(f) for f in released], train_end, val_end,
     )
 
     ingest.convert_csvs_to_parquet(raw_csv_dir, raw_parquet_dir)
@@ -103,7 +103,7 @@ def run_bulk_cycle(
     logger.info("Bulk cycle complete. Val metrics: %s", metrics)
     return {
         "cycle": n_periods,
-        "released_files": [f.name for f in released],
+        "released_files": [storage.basename(f) for f in released],
         "train_end": train_end,
         "val_end": val_end,
         **metrics,

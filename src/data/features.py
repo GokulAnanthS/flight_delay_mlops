@@ -21,12 +21,13 @@ from pathlib import Path
 import pandas as pd
 
 from src import config
+from src.data import storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def load_raw(data_dir: Path = config.RAW_PARQUET_DIR) -> pd.DataFrame:
+def load_raw(data_dir=config.RAW_PARQUET_DIR) -> pd.DataFrame:
     return pd.read_parquet(data_dir)
 
 
@@ -144,17 +145,16 @@ def split_train_val_test(
     return train, val, test
 
 
-def save_processed(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame, out_dir: Path = config.PROCESSED_DIR) -> None:
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    train.to_parquet(out_dir / "train.parquet")
-    val.to_parquet(out_dir / "val.parquet")
-    test.to_parquet(out_dir / "test.parquet")
+def save_processed(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame, out_dir=config.PROCESSED_DIR) -> None:
+    storage.ensure_dir(out_dir)
+    train.to_parquet(storage.join(out_dir, "train.parquet"))
+    val.to_parquet(storage.join(out_dir, "val.parquet"))
+    test.to_parquet(storage.join(out_dir, "test.parquet"))
     logger.info("Saved train/val/test to %s", out_dir)
 
 
 def save_lookup_tables(
-    tables: dict[str, pd.DataFrame], overall_fallback: float, out_dir: Path = config.LOOKUP_DIR
+    tables: dict[str, pd.DataFrame], overall_fallback: float, out_dir=config.LOOKUP_DIR
 ) -> None:
     """Persist the historical rate lookup tables an inference stage will need later.
 
@@ -162,17 +162,16 @@ def save_lookup_tables(
     for this carrier/route/origin" the same way training did, these tables
     are that record, plus the scalar fallback for entities with no history.
     """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    storage.ensure_dir(out_dir)
     for name, table in tables.items():
-        table.to_parquet(out_dir / f"{name}_hist.parquet")
-    pd.DataFrame([{"overall_fallback": overall_fallback}]).to_parquet(out_dir / "overall_fallback.parquet")
+        table.to_parquet(storage.join(out_dir, f"{name}_hist.parquet"))
+    pd.DataFrame([{"overall_fallback": overall_fallback}]).to_parquet(storage.join(out_dir, "overall_fallback.parquet"))
     logger.info("Saved %d lookup tables to %s", len(tables), out_dir)
 
 
 def run_pipeline(
-    raw_dir: Path = config.RAW_PARQUET_DIR,
-    out_dir: Path = config.PROCESSED_DIR,
+    raw_dir=config.RAW_PARQUET_DIR,
+    out_dir=config.PROCESSED_DIR,
     train_end: str = config.TRAIN_END,
     val_end: str = config.VAL_END,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

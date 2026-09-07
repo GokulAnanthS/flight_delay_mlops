@@ -1,0 +1,36 @@
+name: CT
+
+# Deliberately no pull_request trigger: this job runs on a self-hosted runner
+# with AWS credentials, and self-hosted runners on a public repo must never
+# be reachable from a fork's PR (arbitrary code execution against our AWS
+# account). workflow_dispatch/schedule only.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  train:
+    runs-on: [self-hosted, ct-runner]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve current mlflow-server task IP
+        # mlflow-server-service has no ALB/Service Connect/Route53 entry --
+        # "http://mlflow-server.flight-delay:5000" (used by the API task
+        # definition) isn't actually resolvable anywhere. The runner lives in
+        # the same VPC, so reach the task directly via its current private
+        # IP instead, looked up fresh each run since it changes on redeploy.
+        run: |
+          TASK_ARN=$(aws ecs list-tasks --cluster flight-delay-cluster --service-name mlflow-server-service --region ${{ vars.AWS_REGION }} --query "taskArns[0]" --output text)
+          ENI_ID=$(aws ecs describe-tasks --cluster flight-delay-cluster --tasks "$TASK_ARN" --region ${{ vars.AWS_REGION }} --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" --output text)
+          PRIVATE_IP=$(aws ec2 describe-network-interfaces --network-interface-ids "$ENI_ID" --region ${{ vars.AWS_REGION }} --query "NetworkInterfaces[0].PrivateIpAddress" --output text)
+          echo "MLFLOW_TRACKING_URI=http://${PRIVATE_IP}:5000" >> "$GITHUB_ENV"
+
+      - name: Run CT cycle
+        env:
+          DATA_BACKEND: s3
+        run: python3 -m src.ct.cycle

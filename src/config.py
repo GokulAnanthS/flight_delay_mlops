@@ -7,20 +7,45 @@ from pathlib import Path
 # --- Paths -------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW_CSV_DIR = PROJECT_ROOT / "data" / "raw" / "csv"
-RAW_PARQUET_DIR = PROJECT_ROOT / "data" / "raw" / "parquet"
-PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
-LOOKUP_DIR = PROCESSED_DIR / "lookup_tables"
+
+# "local": everything under PROJECT_ROOT/data, as before. "s3": everything
+# under s3://S3_BUCKET, no local mirror step -- pandas/pyarrow read/write
+# s3:// paths directly (via s3fs), and src/data/storage.py handles the rest
+# (listing, manifests, copies) that pandas doesn't cover.
+DATA_BACKEND = os.environ.get("DATA_BACKEND", "local")
+assert DATA_BACKEND in ("local", "s3"), f"Unknown DATA_BACKEND: {DATA_BACKEND!r}"
+
+# Same bucket cd.yml already pulls processed/train.parquet and
+# processed/lookup_tables/ from -- keep keys unprefixed (no "data/" segment)
+# so CT's output lands exactly where CD already looks for it.
+S3_BUCKET = os.environ.get("S3_BUCKET", "flight-delay-mlops-gokul2026")
+
+
+def _join(base, *parts: str):
+    if str(base).startswith("s3://"):
+        return "/".join([str(base).rstrip("/"), *parts])
+    return Path(base, *parts)
+
+
+_DATA_ROOT = f"s3://{S3_BUCKET}" if DATA_BACKEND == "s3" else PROJECT_ROOT / "data"
+
+RAW_CSV_DIR = _join(_DATA_ROOT, "raw", "csv")
+RAW_PARQUET_DIR = _join(_DATA_ROOT, "raw", "parquet")
+PROCESSED_DIR = _join(_DATA_ROOT, "processed")
+LOOKUP_DIR = _join(PROCESSED_DIR, "lookup_tables")
+
+# Local always: an ephemeral snapshot of the run's model on the runner's own
+# disk (also logged to MLflow as an artifact), not part of the CT data flow.
 MODELS_DIR = PROJECT_ROOT / "models"
 
-# Staging area for CT (continuous training): user-downloaded post-2021 BTS
+# Staging area for CT (continuous training): user-uploaded post-2021 BTS
 # monthly CSVs land here untouched, then src/ct/arrivals.py releases them
 # into RAW_CSV_DIR one at a time to simulate new data arriving over time.
-INCOMING_DIR = PROJECT_ROOT / "data" / "incoming"
+INCOMING_DIR = _join(_DATA_ROOT, "incoming")
 
-TRAIN_PATH = PROCESSED_DIR / "train.parquet"
-VAL_PATH = PROCESSED_DIR / "val.parquet"
-TEST_PATH = PROCESSED_DIR / "test.parquet"
+TRAIN_PATH = _join(PROCESSED_DIR, "train.parquet")
+VAL_PATH = _join(PROCESSED_DIR, "val.parquet")
+TEST_PATH = _join(PROCESSED_DIR, "test.parquet")
 
 # --- Target --------------------------------------------------------------
 

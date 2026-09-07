@@ -5,15 +5,13 @@ the full set of files is tens of GB combined.
 """
 
 import argparse
-import glob
-import json
 import logging
-import os
 from pathlib import Path
 
 import pandas as pd
 
 from src import config
+from src.data import storage
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,34 +22,28 @@ logger = logging.getLogger(__name__)
 MANIFEST_FILENAME = "_converted_files.json"
 
 
-def _load_manifest(output_dir: Path) -> dict:
-    manifest_path = Path(output_dir) / MANIFEST_FILENAME
-    if not manifest_path.exists():
-        return {}
-    with open(manifest_path) as f:
-        return json.load(f)
+def _load_manifest(output_dir) -> dict:
+    return storage.read_json(storage.join(output_dir, MANIFEST_FILENAME)) or {}
 
 
-def _save_manifest(output_dir: Path, manifest: dict) -> None:
-    manifest_path = Path(output_dir) / MANIFEST_FILENAME
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2, sort_keys=True)
+def _save_manifest(output_dir, manifest: dict) -> None:
+    storage.write_json(storage.join(output_dir, MANIFEST_FILENAME), manifest)
 
 
-def convert_csvs_to_parquet(input_dir: Path = config.RAW_CSV_DIR, output_dir: Path = config.RAW_PARQUET_DIR) -> int:
+def convert_csvs_to_parquet(input_dir=config.RAW_CSV_DIR, output_dir=config.RAW_PARQUET_DIR) -> int:
     """Convert every not yet converted CSV in `input_dir` into `output_dir`, partitioned by YEAR/MONTH.
     A file is considered already converted if its name and size match an entry
     recorded in `output_dir/_converted_files.json` from a previous run.
     Returns the number of files converted (skipped files don't count).
     """
-    os.makedirs(output_dir, exist_ok=True)
+    storage.ensure_dir(output_dir)
     manifest = _load_manifest(output_dir)
 
-    all_files = sorted(glob.glob(str(Path(input_dir) / "*.csv")))
+    all_files = storage.list_files(input_dir, "*.csv")
     files = []
     for file in all_files:
-        size = os.path.getsize(file)
-        entry = manifest.get(Path(file).name)
+        size = storage.get_size(file)
+        entry = manifest.get(storage.basename(file))
         if entry is not None and entry.get("size") == size:
             logger.info("Skipping already-converted file: %s", file)
         else:
@@ -76,7 +68,7 @@ def convert_csvs_to_parquet(input_dir: Path = config.RAW_CSV_DIR, output_dir: Pa
             existing_data_behavior="overwrite_or_ignore",
         )
 
-        manifest[Path(file).name] = {"size": os.path.getsize(file)}
+        manifest[storage.basename(file)] = {"size": storage.get_size(file)}
         _save_manifest(output_dir, manifest)
         logger.info("Completed %d/%d", i, len(files))
 
