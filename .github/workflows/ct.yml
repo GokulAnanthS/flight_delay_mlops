@@ -16,7 +16,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # python3.11 explicitly, not the bare "python3"/"pip" -- those resolve
+        # to the runner's system Python 3.9, which is too old for the pinned
+        # boto3/botocore versions below (they require 3.10+).
+        run: python3.11 -m pip install --user -r requirements.txt
 
       - name: Resolve current mlflow-server task IP
         # mlflow-server-service has no ALB/Service Connect/Route53 entry --
@@ -33,4 +36,4 @@ jobs:
       - name: Run CT cycle
         env:
           DATA_BACKEND: s3
-        run: python3 -m src.ct.cycle
+        run: python3.11 -m src.ct.cycle
