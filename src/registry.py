@@ -10,8 +10,8 @@ real traffic just because a training run finished.
 
 import argparse
 import logging
-import httpx
 
+import httpx
 import mlflow
 from mlflow import MlflowClient
 from mlflow.entities.model_registry import ModelVersion
