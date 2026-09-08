@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: "flight-delay-api"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["__API_METRICS_TARGET__"]
+
+remote_write:
+  - url: "__GRAFANA_REMOTE_WRITE_URL__"
+    basic_auth:
+      username: "__GRAFANA_CLOUD_USER__"
+      password: "__GRAFANA_CLOUD_API_KEY__"
